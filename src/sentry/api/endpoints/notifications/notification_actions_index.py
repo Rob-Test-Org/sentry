@@ -45,7 +45,7 @@ class NotificationActionsPermission(OrganizationPermission):
 @region_silo_endpoint
 class NotificationActionsIndexEndpoint(OrganizationEndpoint):
     publish_status = {
-        "GET": ApiPublishStatus.EXPERIMENTAL,
+        "GET": ApiPublishStatus.PRIVATE,
         "POST": ApiPublishStatus.EXPERIMENTAL,
     }
 
