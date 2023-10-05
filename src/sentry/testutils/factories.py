@@ -69,6 +69,7 @@ from sentry.models import (
     OrganizationMapping,
     OrganizationMember,
     OrganizationMemberTeam,
+    OrganizationSlugReservation,
     PlatformExternalIssue,
     Project,
     ProjectBookmark,
@@ -115,7 +116,7 @@ from sentry.testutils.outbox import outbox_runner
 from sentry.testutils.silo import assume_test_silo_mode
 from sentry.types.activity import ActivityType
 from sentry.types.integrations import ExternalProviders
-from sentry.types.region import Region, get_region_by_name
+from sentry.types.region import Region, get_local_region, get_region_by_name
 from sentry.utils import json, loremipsum
 from sentry.utils.performance_issues.performance_problem import PerformanceProblem
 from social_auth.models import UserSocialAuth
@@ -285,6 +286,7 @@ class Factories:
         with org_creation_context():
             org = Organization.objects.create(name=name, **kwargs)
 
+        slug_res_region = "us"
         if region is not None:
             with assume_test_silo_mode(SiloMode.CONTROL), unguarded_write(
                 using=router.db_for_write(OrganizationMapping)
@@ -292,8 +294,20 @@ class Factories:
                 mapping = OrganizationMapping.objects.get(organization_id=org.id)
                 mapping.update(region_name=region.name)
 
+            if SiloMode.get_current_mode() != SiloMode.CONTROL:
+                slug_res_region = get_local_region()
+
         if owner:
             Factories.create_member(organization=org, user_id=owner.id, role="owner")
+
+        org_slug_user = org.get_default_owner().id if owner else -1
+        with assume_test_silo_mode(SiloMode.CONTROL):
+            OrganizationSlugReservation(
+                organization_id=org.id,
+                region_name=slug_res_region,
+                slug=org.slug,
+                user_id=org_slug_user,
+            ).save(unsafe_write=True)
         return org
 
     @staticmethod
