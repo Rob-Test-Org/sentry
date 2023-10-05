@@ -68,7 +68,7 @@ class FindingsTests(TestCase):
             finding.pretty()
             == """TestFinding(
     kind: Unknown,
-    on: InstanceID(model: 'sentry.email'),
+    on: InstanceID(model: sentry.email),
     reason: test reason
 )"""
         )
