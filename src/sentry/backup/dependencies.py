@@ -4,7 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum, auto, unique
 from functools import lru_cache
-from typing import Dict, FrozenSet, NamedTuple, Optional, Set, Tuple, Type
+from typing import NamedTuple, Optional, Tuple, Type
 
 from django.db import models
 from django.db.models.fields.related import ForeignKey, OneToOneField
@@ -147,6 +147,9 @@ class ModelRelations:
             return self.model.get_possible_relocation_scopes()
         return set()
 
+    def get_dependencies_for_relocation(self) -> set[Type[models.base.Model]]:
+        return self.flatten().union(self.relocation_dependencies)
+
     def get_uniques_without_foreign_keys(self) -> list[frozenset[str]]:
         """
         Gets all unique sets (that is, either standalone fields that are marked `unique=True`, or
@@ -174,7 +177,7 @@ class ModelRelations:
         return out
 
 
-def get_model_name(model: type[models.Model] | models.Model) -> NormalizedModelName:
+def get_model_name(model: Type[models.Model] | models.Model) -> NormalizedModelName:
     return NormalizedModelName(f"{model._meta.app_label}.{model._meta.object_name}")
 
 
@@ -214,7 +217,7 @@ class DependenciesJSONEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-class ImportKind(Enum):
+class ImportKind(str, Enum):
     """
     When importing a given model, we may create a new copy of it (`Inserted`), merely re-use an
     `Existing` copy that has the same already-used globally unique identifier (ex: `username` for
@@ -224,9 +227,9 @@ class ImportKind(Enum):
     if they are dealing with a new or re-used model.
     """
 
-    Inserted = auto()
-    Existing = auto()
-    Overwrite = auto()
+    Inserted = "Inserted"
+    Existing = "Existing"
+    Overwrite = "Overwrite"
 
 
 class PrimaryKeyMap:
@@ -241,8 +244,7 @@ class PrimaryKeyMap:
     keys are not supported!
     """
 
-    # Pydantic duplicates global default models on a per-instance basis, so using `{}` here is safe.
-    mapping: Dict[str, Dict[int, Tuple[int, ImportKind]]]
+    mapping: dict[str, dict[int, Tuple[int, ImportKind]]]
 
     def __init__(self):
         self.mapping = defaultdict(dict)
@@ -262,7 +264,7 @@ class PrimaryKeyMap:
 
         return entry[0]
 
-    def get_pks(self, model_name: NormalizedModelName) -> Set[int]:
+    def get_pks(self, model_name: NormalizedModelName) -> set[int]:
         """
         Get a list of all of the pks for a specific model.
         """
@@ -291,6 +293,31 @@ class PrimaryKeyMap:
 
         self.mapping[str(model_name)][old] = (new, kind)
 
+    def extend(self, other: PrimaryKeyMap) -> None:
+        """
+        Insert all values from another map into this one, without mutating the original map.
+        """
+
+        for model_name_str, mappings in other.mapping.items():
+            for old_pk, new_entry in mappings.items():
+                self.mapping[model_name_str][old_pk] = new_entry
+
+    def partition(self, model_names: set[NormalizedModelName]) -> PrimaryKeyMap:
+        """
+        Create a new map with only the specified model kinds retained.
+        """
+
+        building = PrimaryKeyMap()
+        for model_name_str, mappings in self.mapping.items():
+            model_name = NormalizedModelName(model_name_str)
+            if model_name not in model_names:
+                continue
+
+            for old_pk, new_entry in mappings.items():
+                building.mapping[model_name_str][old_pk] = new_entry
+
+        return building
+
 
 # No arguments, so we lazily cache the result after the first calculation.
 @lru_cache(maxsize=1)
@@ -312,7 +339,7 @@ def dependencies() -> dict[NormalizedModelName, ModelRelations]:
     from sentry.models.team import Team
 
     # Process the list of models, and get the list of dependencies.
-    model_dependencies_dict: Dict[NormalizedModelName, ModelRelations] = {}
+    model_dependencies_dict: dict[NormalizedModelName, ModelRelations] = {}
     app_configs = apps.get_app_configs()
     models_from_names = {
         get_model_name(model): model
@@ -327,8 +354,8 @@ def dependencies() -> dict[NormalizedModelName, ModelRelations]:
         model_iterator = app_config.get_models()
 
         for model in model_iterator:
-            foreign_keys: Dict[str, ForeignField] = dict()
-            uniques: Set[FrozenSet[str]] = {
+            foreign_keys: dict[str, ForeignField] = dict()
+            uniques: set[frozenset[str]] = {
                 frozenset(combo) for combo in model._meta.unique_together
             }
 
@@ -461,7 +488,7 @@ def dependencies() -> dict[NormalizedModelName, ModelRelations]:
     # models non-dangling, then traversing from every other model to a (possible) root model
     # recursively. At this point there should be no circular reference chains, so if we encounter
     # them, fail immediately.
-    def resolve_dangling(seen: Set[NormalizedModelName], model_name: NormalizedModelName) -> bool:
+    def resolve_dangling(seen: set[NormalizedModelName], model_name: NormalizedModelName) -> bool:
         model_relations = model_dependencies_dict[model_name]
         model_name = get_model_name(model_relations.model)
         if model_name in seen:
@@ -530,7 +557,7 @@ def sorted_dependencies() -> list[Type[models.base.Model]]:
         changed = False
         while model_dependencies_dict:
             model_deps = model_dependencies_dict.pop()
-            deps = model_deps.flatten().union(model_deps.relocation_dependencies)
+            deps = model_deps.get_dependencies_for_relocation()
             model = model_deps.model
 
             # If all of the models in the dependency list are either already
