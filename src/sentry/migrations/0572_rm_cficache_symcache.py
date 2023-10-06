@@ -17,7 +17,7 @@ def rm_cficache_symcache(apps, schema_editor):
     # According to <https://develop.sentry.dev/database-migrations/#filters>:
     # > it is better to iterate over the entire table instead of using a filter
     # Also, there is no index on `type` anyway.
-    for file in RangeQuerySetWrapperWithProgressBar(File.objects.all()):
+    for file in RangeQuerySetWrapperWithProgressBar(File.objects.filter(type__in=TYPES_TO_DELETE)):
         if file.type in TYPES_TO_DELETE:
             file.delete()
 
