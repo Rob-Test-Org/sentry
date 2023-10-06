@@ -753,10 +753,11 @@ def check_chartcuterie(containers: dict[str, Any]) -> None:
 
 
 def check_snuba(containers: dict[str, Any]) -> None:
-    options = containers["snuba"]
-    port = options["ports"]["1218/tcp"]
+    from django.conf import settings
 
-    url = f"http://{port[0]}:{port[1]}/health_envoy"
+    options = containers["snuba"]
+
+    url = f"{settings.SENTRY_SNUBA}/health_envoy"
     subprocess.run(
         (
             "docker",
