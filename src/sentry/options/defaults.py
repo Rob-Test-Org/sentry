@@ -1082,7 +1082,9 @@ register(
 )
 register(
     "sentry-metrics.cardinality-limiter.limits.releasehealth.per-org",
-    default=[],
+    default=[
+        {"window_seconds": 3600, "granularity_seconds": 600, "limit": 10000},
+    ],
     flags=FLAG_AUTOMATOR_MODIFIABLE,
 )
 register(
@@ -1094,7 +1096,9 @@ register(
 )
 register(
     "sentry-metrics.cardinality-limiter.limits.sessions.per-org",
-    default=[],
+    default=[
+        {"window_seconds": 3600, "granularity_seconds": 600, "limit": 10000},
+    ],
     flags=FLAG_AUTOMATOR_MODIFIABLE,
 )
 register(
@@ -1125,7 +1129,7 @@ register(
 )
 register(
     "sentry-metrics.cardinality-limiter-rh.orgs-rollout-rate",
-    default=0.0,
+    default=1.0,
     flags=FLAG_AUTOMATOR_MODIFIABLE,
 )
 register(
